@@ -1,0 +1,100 @@
+#!/usr/bin/env node
+
+const fs = require('fs');
+const path = require('path');
+
+/**
+ * Pre-commit hook to prevent codebase duplication
+ * Checks for multiple package.json files or src directories
+ */
+
+function checkForDuplication() {
+  const rootDir = process.cwd();
+  const items = fs.readdirSync(rootDir);
+  
+  let packageJsonCount = 0;
+  let srcDirCount = 0;
+  let prismaDirCount = 0;
+  
+  // Directories to ignore (build artifacts, dependencies, etc.)
+  const ignoreDirs = ['.next', 'node_modules', '.git', 'dist', 'build', 'out'];
+  
+  // Count package.json files
+  items.forEach(item => {
+    const itemPath = path.join(rootDir, item);
+    const stat = fs.statSync(itemPath);
+    
+    if (stat.isFile() && item === 'package.json') {
+      packageJsonCount++;
+    }
+    
+    if (stat.isDirectory()) {
+      if (item === 'src') {
+        srcDirCount++;
+      } else if (item === 'prisma') {
+        prismaDirCount++;
+      } else if (!ignoreDirs.includes(item)) {
+        // Check nested directories for package.json or src (but ignore build/dependency dirs)
+        try {
+          const nestedItems = fs.readdirSync(itemPath);
+          nestedItems.forEach(nestedItem => {
+            const nestedPath = path.join(itemPath, nestedItem);
+            const nestedStat = fs.statSync(nestedPath);
+            
+            if (nestedStat.isFile() && nestedItem === 'package.json') {
+              packageJsonCount++;
+              console.error(`❌ Found nested package.json in: ${itemPath}`);
+            }
+            
+            if (nestedStat.isDirectory() && nestedItem === 'src') {
+              srcDirCount++;
+              console.error(`❌ Found nested src directory in: ${itemPath}`);
+            }
+            
+            if (nestedStat.isDirectory() && nestedItem === 'prisma') {
+              prismaDirCount++;
+              console.error(`❌ Found nested prisma directory in: ${itemPath}`);
+            }
+          });
+        } catch (err) {
+          // Ignore errors reading nested directories
+        }
+      }
+    }
+  });
+  
+  // Check for violations
+  let hasViolations = false;
+  
+  if (packageJsonCount > 1) {
+    console.error(`❌ Found ${packageJsonCount} package.json files. Only one should exist at the root.`);
+    hasViolations = true;
+  }
+  
+  if (srcDirCount > 1) {
+    console.error(`❌ Found ${srcDirCount} src directories. Only one should exist at the root.`);
+    hasViolations = true;
+  }
+  
+  if (prismaDirCount > 1) {
+    console.error(`❌ Found ${prismaDirCount} prisma directories. Only one should exist at the root.`);
+    hasViolations = true;
+  }
+  
+  if (hasViolations) {
+    console.error('\n🚨 CODEBASE DUPLICATION DETECTED!');
+    console.error('This could lead to confusion and deployment issues.');
+    console.error('Please ensure you only have one project structure at the root level.');
+    console.error('\nExpected structure:');
+    console.error('  /package.json');
+    console.error('  /src/');
+    console.error('  /prisma/');
+    console.error('  /...other config files');
+    process.exit(1);
+  }
+  
+  console.log('✅ No codebase duplication detected');
+}
+
+// Run the check
+checkForDuplication(); 
